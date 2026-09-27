@@ -17,3 +17,4 @@ uv run main --max-frames 450 --step-frames 15
 - faster human segmentation process (maybe not NN)
 - segmentation include objects around people (bag, ...)
 - apply smoothing only where 0 from outside border to inside
+- temporal diff. for movements detection
