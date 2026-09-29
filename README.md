@@ -1,4 +1,23 @@
 
+# Phase 0
+
+- [ ] Phase 1 videos
+    - stable phone
+    - 1 to 3 people pass in front of the camera as well as other moving objects
+    - 1 indoor/1 outdoor
+- [ ] Phase 2 videos
+    - sideways oscillations left to right and right to left for 1 minute
+    - no people on the video
+    - 1 indoor/1 outdoor
+- [ ] Phase 3 videos
+    - sideways oscillations left to right and right to left for 1 minute
+    - 1 to 3 people on the video as well as moving objects
+    - 1 indoor/1 outdoor
+
+# Phase 1
+
+- [ ] 
+
 # Protocol for Data Capture
 
 1. hold phone still
