@@ -7,7 +7,7 @@ import numpy as np
 from .filters import mean_non_masked, smooth_image
 from .IO.image import save_output
 from .IO.video import load_vid
-from .segmentation import segment_people_batch
+from .segmentation import segment_frame_differencing, segment_people_batch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ DEFAULT_SEGMENTATION_METHOD="DNN"
 DEFAULT_TEMPORAL_FILTERING_METHOD="MNM"
 DEFAULT_SMOOTHING_METHOD="NONE"
 
-SEGMENTERS = {"DNN": segment_people_batch}
+SEGMENTERS = {"DNN": segment_people_batch, "DIFF": segment_frame_differencing}
 FILTERS = {"MNM": mean_non_masked}
 SMOOTHERS = {
     "KERNEL": lambda img: smooth_image(img, kernel_size=5),

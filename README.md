@@ -16,7 +16,7 @@
 
 # Phase 1
 
-- [ ] 
+- [ ] median filtering
 
 # Protocol for Data Capture
 
@@ -31,6 +31,13 @@
 uv run main --max-frames 180 --step-frames 45 --video <mettre video dans /data puis nom.mp4 ici>
 uv run main --max-frames 450 --step-frames 15
 ```
+
+For frame differencing:
+```bash
+uv run main --segmentation DIFF --max-frames 400 --step-frames 1
+```
+Note that if you film at *30FPS* it means you are gonna read the first
+
 
 # TODO
 - faster human segmentation process (maybe not NN)
