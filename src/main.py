@@ -2,10 +2,10 @@
 import argparse
 import logging
 
+import cv2
 import numpy as np
 
 from .filters import mean_non_masked, smooth_image
-from .IO.image import save_output
 from .IO.video import load_vid
 from .segmentation import segment_frame_differencing, segment_people_batch
 
@@ -44,7 +44,20 @@ def main():
     frames = load_vid(args.video, selected_frames=range(0, args.max_frames, args.step_frames))
     logger.info(f"Number of frames loaded: {len(frames)}")
 
-    img = run_pipeline(frames, args.segmentation, args.filtering, args.smoothing)
+    # REMOVE THIS AS SOON AS POSSIBLE
+    frames = [cv2.resize(frame, (960, 540)) for frame in frames]
+    from segmentation import ViBe
+    model = ViBe()
 
-    # save image
-    save_output(f"output_{args.segmentation}_{args.filtering}_{args.smoothing}_{args.step_frames}.png", img)
+    idx = 0
+    for idx, frame in enumerate(frames):
+        model.update_and_display(frame)
+        print(f"Processed frame {idx + 1}/{len(frames)}")
+
+    cv2.destroyAllWindows()
+
+
+    # img = run_pipeline(frames, args.segmentation, args.filtering, args.smoothing)
+
+    # # save image
+    # save_output(f"output_{args.segmentation}_{args.filtering}_{args.smoothing}_{args.step_frames}.png", img)

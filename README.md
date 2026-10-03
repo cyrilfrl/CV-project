@@ -1,4 +1,3 @@
-
 # Phase 0
 
 - [ ] Phase 1 videos
@@ -15,8 +14,19 @@
     - 1 indoor/1 outdoor
 
 # Phase 1
+- [ ] adapt pipeline to work with __init__, update, segment, _background
+- [ ] frame differencing
+    - [ ] adapt interface
+- [ ] ViBe
+    - [x] vectorize initialization
+    - [ ] implement segmentation
+    - [ ] improve speed (https://kernprof.readthedocs.io/en/latest/)
+- [ ] single Gaussian
+- [ ] MOG
 
-- [ ] median filtering
+# Phase 2
+- [ ] homography/feature detection and matching (Harris corners, RANSAC), image warping/blending and cylindrical or spherical projection
+
 
 # Protocol for Data Capture
 

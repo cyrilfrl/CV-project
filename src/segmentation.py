@@ -2,6 +2,7 @@
 import cv2
 import numpy as np
 import torch
+from scipy.ndimage import binary_fill_holes
 from torchvision.models.segmentation import (
     LRASPP_MobileNet_V3_Large_Weights,
     lraspp_mobilenet_v3_large,
@@ -74,46 +75,40 @@ class GRABCUT:
     pass
 
 
+class FrameDifferencing(Segmenter):
+    def diff_frames(frames, step=20):
+        # rgb version: 47 ms ± 13.7 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
+        # gray version: 441 ms ± 87.3 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+        return [cv2.absdiff(frames[i], frames[i - step]) for i in range(step, len(frames), step)]
 
+    def threshold_diffs(frames_diff, threshold=15, set_to=1):
+        return [cv2.threshold(frame, threshold, set_to, cv2.THRESH_BINARY)[1] for frame in [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) for frame in frames_diff]]
 
+    def fill_masks(frames_masks):
+        return [1- binary_fill_holes(mask) for mask in frames_masks]
 
-from scipy.ndimage import binary_fill_holes
+    def segment_frame_mask(imgs, masks): # AI BULLSHIT
+        if not masks:
+            raise ValueError("No masks were generated")
 
+        n_imgs = len(imgs)
+        n_masks = len(masks)
+        chunk_size = max(1, n_imgs // n_masks)
 
-def diff_frames(frames, step=20):
-    # stay rgb version: 47 ms ± 13.7 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
-    # convert gray version: 441 ms ± 87.3 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
-    return [cv2.absdiff(frames[i], frames[i - step]) for i in range(step, len(frames), step)]
+        masked_frames = []
+        expanded_masks = []
 
-def threshold_diffs(frames_diff, threshold=15):
-    # return [np.where(frame > threshold, 1, 0).astype(np.uint8) for frame in frames_diff]
-    return [cv2.threshold(frame, threshold, 1, cv2.THRESH_BINARY)[1] for frame in [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) for frame in frames_diff]]
+        for index, image in enumerate(imgs):
+            mask_index = min(index // chunk_size, n_masks - 1)
+            mask = np.asarray(masks[mask_index], dtype=np.uint8)
 
-def fill_masks(frames_masks):
-    return [1- binary_fill_holes(mask) for mask in frames_masks]
+            masked_frames.append(image * mask[..., None])
+            expanded_masks.append(mask)
 
-def segment_frame_mask(imgs, masks): # AI BULLSHIT
-    if not masks:
-        raise ValueError("No masks were generated")
-
-    n_imgs = len(imgs)
-    n_masks = len(masks)
-    chunk_size = max(1, n_imgs // n_masks)
-
-    masked_frames = []
-    expanded_masks = []
-
-    for index, image in enumerate(imgs):
-        mask_index = min(index // chunk_size, n_masks - 1)
-        mask = np.asarray(masks[mask_index], dtype=np.uint8)
-
-        masked_frames.append(image * mask[..., None])
-        expanded_masks.append(mask)
-
-    return (
-        np.asarray(masked_frames),
-        np.asarray(expanded_masks),
-    )
+        return (
+            np.asarray(masked_frames),
+            np.asarray(expanded_masks),
+        )
 
 # def segment_frame_differencing(imgs):
 #     frames_differenced = diff_frames(imgs, step=20)
@@ -140,3 +135,91 @@ def segment_frame_differencing(imgs):
     print(f"{len(frames_masks)} masks generated")
 
     return frames_segmented, frames_masks
+
+####################################################################################################
+#                                            ViBe                                                  #
+####################################################################################################
+
+class ViBe:
+    def __init__(self, N=20, R=20, min_count=2, time_sampling_prob=0.0625):
+        self.models = None
+        self.N = N
+        self.R = R
+        self.min_count = min_count
+        self.time_sampling_prob = time_sampling_prob
+
+    def _initialize(self, frame: np.ndarray):
+        h, w, _ = frame.shape
+        padded = np.pad(frame, ((1, 1), (1, 1), (0, 0)), mode="reflect")
+        offsets = np.array([ (-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1) ])
+        choices = np.random.choice([0, 1, 2, 3, 4, 5, 6, 7], size=(h, w, self.N))
+        choices_offsets = offsets[choices] # (h, w, 20, 2)
+        choices_offsets_x = choices_offsets[:, :, :, 0]
+        choices_offsets_y = choices_offsets[:, :, :, 1]
+
+        xx, yy = np.meshgrid(np.arange(w), np.arange(h))
+        coors_x = xx[:, :, None] + choices_offsets_x # (h, w, 20)
+        coors_y = yy[:, :, None] + choices_offsets_y # (h, w, 20)
+
+        self.models = np.zeros((h, w, 3, self.N), dtype=np.uint8) # (h, w, 3, 20)
+        self.models[:, :, :, :] = padded[coors_y, coors_x, :].transpose(0, 1, 3, 2) # note: coors_x and _y broadcasting to (h, w, 20) inserted before channel
+
+    def _count_at_distance(self, frame):
+        diff = self.models - frame[:, :, :, None]
+        sq_dist = np.sum(diff**2, axis=2)
+        dist = np.sqrt(sq_dist)
+        close = dist < self.R
+        counts = np.sum(close, axis=2)
+        return counts
+
+    def _to_update(self, frame):
+        h, w, _ = frame.shape
+        return np.random.rand(h, w) <= self.time_sampling_prob
+
+    def _get_random_neighboring_pixel(self, coord_x, coord_y, frame):
+        h, w, _ = frame.shape
+        
+        row = np.random.randint(max(0, coord_y - 1), min(coord_y + 2, h - 1))
+        if row == coord_y - 1 or row == coord_y + 1:
+            col = np.random.randint(max(0, coord_x - 1), min(coord_x + 2, w - 1))
+        elif row == coord_y:
+            col = np.random.choice([max(0, coord_x - 1), min(coord_x + 1, w - 1)])
+
+        return (row, col)
+
+    def update(self, frame: np.ndarray):
+        if self.models is None:
+            self._initialize(frame)
+        elif isinstance(self.models, np.ndarray):
+            counts = self._count_at_distance(frame)
+            to_update = self._to_update(frame)
+
+            h, w, _ = frame.shape
+            for i in range(h):
+                for j in range(w):
+                    if to_update[i, j]:
+                        if counts[i, j] < self.min_count:
+                            continue
+
+                        n = np.random.randint(0, self.N)
+                        self.models[i, j, :, n] = frame[i, j, :]
+
+                        n = np.random.randint(0, self.N)
+                        i_neighbor, j_neighbor = self._get_random_neighboring_pixel(j, i, frame)
+                        self.models[i_neighbor, j_neighbor, :, n] = frame[i, j, :]
+    
+    def update_and_display(self, frame: np.ndarray, display_size=(1920, 1080)):
+        self.update(frame)
+        current_model = np.median(self.models, axis=3).astype(np.uint8)
+
+        # half display size
+        display_size = (display_size[0] // 2, display_size[1] // 2)
+
+        model_resized = cv2.resize(current_model, display_size)
+        frame_resized = cv2.resize(frame, display_size)
+        screen = cv2.hconcat([model_resized, frame_resized])
+        cv2.imshow("ViBe", screen)
+        cv2.waitKey(5)
+
+    def segmentation(self, frame: np.ndarray):
+        pass
