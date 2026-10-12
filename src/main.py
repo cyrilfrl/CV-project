@@ -7,13 +7,13 @@ import numpy as np
 
 from .filters import mean_non_masked, smooth_image
 from .IO.video import load_vid
-from .segmentation import segment_frame_differencing, segment_people_batch
+from .segmentation.segmentation import segment_frame_differencing, segment_people_batch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # constants definition
-DEFAULT_VIDEO_NAME="People Walking Free Stock Footage, Royalty-Free No Copyright Content.mp4"
+DEFAULT_VIDEO_NAME="group_1_phase1_static_indoor.mp4"
 DEFAULT_SEGMENTATION_METHOD="DNN"
 DEFAULT_TEMPORAL_FILTERING_METHOD="MNM"
 DEFAULT_SMOOTHING_METHOD="NONE"
@@ -46,7 +46,7 @@ def main():
 
     # REMOVE THIS AS SOON AS POSSIBLE
     frames = [cv2.resize(frame, (960, 540)) for frame in frames]
-    from segmentation import ViBe
+    from .segmentation.segmentation import ViBe
     model = ViBe()
 
     idx = 0
