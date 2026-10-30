@@ -1,4 +1,3 @@
-
 from abc import ABC, abstractmethod
 from collections import deque
 
@@ -9,6 +8,7 @@ from scipy.ndimage import binary_fill_holes
 # ####################################################################################################
 #                                             Background Subtractor                                  #
 # ####################################################################################################
+
 
 class BackgroundSubtractor(ABC):
     @abstractmethod
@@ -25,6 +25,7 @@ class BackgroundSubtractor(ABC):
     @abstractmethod
     def segment(self, frame: np.ndarray | list[np.ndarray]) -> np.ndarray:
         pass
+
 
 # ####################################################################################################
 #                                             Neural Network                                         #
@@ -62,6 +63,7 @@ class BackgroundSubtractor(ABC):
 
 #         return frames_segmented, frames_masks
 
+
 class FrameDifferencing(BackgroundSubtractor):
     def __init__(self, frame, step_size=1, threshold=15):
         self.step_size = step_size
@@ -76,7 +78,7 @@ class FrameDifferencing(BackgroundSubtractor):
         return mask
 
     def update(self, frame):
-        self.buffer.append(frame))
+        self.buffer.append(frame)
 
     def _background(self):
         return
@@ -85,6 +87,7 @@ class FrameDifferencing(BackgroundSubtractor):
 # ####################################################################################################
 # #                                            ViBe                                                  #
 # ####################################################################################################
+
 
 class ViBe:
     def __init__(self, N=20, R=20, min_count=2, time_sampling_prob=0.0625):
@@ -97,18 +100,22 @@ class ViBe:
     def _initialize(self, frame: np.ndarray):
         h, w, _ = frame.shape
         padded = np.pad(frame, ((1, 1), (1, 1), (0, 0)), mode="reflect")
-        offsets = np.array([ (-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1) ])
+        offsets = np.array(
+            [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+        )
         choices = np.random.choice([0, 1, 2, 3, 4, 5, 6, 7], size=(h, w, self.N))
-        choices_offsets = offsets[choices] # (h, w, 20, 2)
+        choices_offsets = offsets[choices]  # (h, w, 20, 2)
         choices_offsets_x = choices_offsets[:, :, :, 0]
         choices_offsets_y = choices_offsets[:, :, :, 1]
 
         xx, yy = np.meshgrid(np.arange(w), np.arange(h))
-        coors_x = xx[:, :, None] + choices_offsets_x # (h, w, 20)
-        coors_y = yy[:, :, None] + choices_offsets_y # (h, w, 20)
+        coors_x = xx[:, :, None] + choices_offsets_x  # (h, w, 20)
+        coors_y = yy[:, :, None] + choices_offsets_y  # (h, w, 20)
 
-        self.models = np.zeros((h, w, 3, self.N), dtype=np.uint8) # (h, w, 3, 20)
-        self.models[:, :, :, :] = padded[coors_y, coors_x, :].transpose(0, 1, 3, 2) # note: coors_x and _y broadcasting to (h, w, 20) inserted before channel
+        self.models = np.zeros((h, w, 3, self.N), dtype=np.uint8)  # (h, w, 3, 20)
+        self.models[:, :, :, :] = padded[coors_y, coors_x, :].transpose(
+            0, 1, 3, 2
+        )  # note: coors_x and _y broadcasting to (h, w, 20) inserted before channel
 
     def _count_at_distance(self, frame):
         diff = self.models - frame[:, :, :, None]
@@ -124,7 +131,7 @@ class ViBe:
 
     def _get_random_neighboring_pixel(self, coord_x, coord_y, frame):
         h, w, _ = frame.shape
-        
+
         row = np.random.randint(max(0, coord_y - 1), min(coord_y + 2, h - 1))
         if row == coord_y - 1 or row == coord_y + 1:
             col = np.random.randint(max(0, coord_x - 1), min(coord_x + 2, w - 1))
@@ -151,9 +158,11 @@ class ViBe:
                         self.models[i, j, :, n] = frame[i, j, :]
 
                         n = np.random.randint(0, self.N)
-                        i_neighbor, j_neighbor = self._get_random_neighboring_pixel(j, i, frame)
+                        i_neighbor, j_neighbor = self._get_random_neighboring_pixel(
+                            j, i, frame
+                        )
                         self.models[i_neighbor, j_neighbor, :, n] = frame[i, j, :]
-    
+
     def update_and_display(self, frame: np.ndarray, display_size=(1920, 1080)):
         self.update(frame)
         current_model = np.median(self.models, axis=3).astype(np.uint8)
@@ -169,3 +178,4 @@ class ViBe:
 
     def segmentation(self, frame: np.ndarray):
         pass
+
