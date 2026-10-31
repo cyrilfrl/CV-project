@@ -41,5 +41,7 @@ class Display:
         cv2.namedWindow("Live display", cv2.WINDOW_NORMAL)
     
     def update(self, *images) -> None:
-        cv2.imshow("Live display", np.hstack(images))
+        img = np.hstack(images)
+        cv2.resizeWindow("Live display", img.shape[1], img.shape[0])
+        cv2.imshow("Live display", img)
         cv2.waitKey(1)

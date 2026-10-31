@@ -48,6 +48,11 @@ uv run main --segmentation DIFF --max-frames 400 --step-frames 1
 ```
 Note that if you film at *30FPS* it means you are gonna read the first
 
+uv run main --max-frames 2000 --step-frames 1 --segmentation DIFF
+uv run main --max-frames 2000 --step-frames 1 --segmentation VIBE
+uv run main --max-frames 2000 --step-frames 1 --segmentation VIBE --size 480 270
+
+
 
 # TODO
 - faster human segmentation process (maybe not NN)

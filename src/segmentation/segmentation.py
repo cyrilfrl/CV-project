@@ -25,11 +25,11 @@ class BackgroundSubtractor(ABC):
         return self.B.astype(np.uint8)
 
     @abstractmethod
-    def update(self, frame: np.ndarray | list[np.ndarray]) -> None:
+    def update(self, frame: np.ndarray) -> None:
         pass
 
     @abstractmethod
-    def segment(self, frame: np.ndarray | list[np.ndarray]) -> np.ndarray:
+    def segment(self, frame: np.ndarray) -> np.ndarray:
         pass
 
     def pipeline(self, frames: np.ndarray | list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
@@ -67,94 +67,51 @@ class FrameDifferencing(BackgroundSubtractor):
 # #                                            ViBe                                                  #
 # ####################################################################################################
 
-
-class ViBe:
-    def __init__(self, N=20, R=20, min_count=2, time_sampling_prob=0.0625):
+class ViBe(BackgroundSubtractor):
+    def __init__(self, frame, N=20, R=20, min_count=2, time_sampling_prob=0.15):
+        super().__init__(frame)
         self.models = None
-        self.N = N
-        self.R = R
-        self.min_count = min_count
-        self.time_sampling_prob = time_sampling_prob
+        self.N, self.R = N, R # N: number of samples per pixel, R: radius for matching [RGB distance]
+        self.min_count = min_count # minimum number of matches to consider a pixel as background
+        self.time_sampling_prob = time_sampling_prob # probability of updating the model at each time step
+        self.samples = self._initialize(frame) # (h, w, N, 3)
+        self.h, self.w, _ = frame.shape
+        self.rows, self.cols = np.mgrid[:self.h, :self.w]   # rows[i, j] = i, cols[i, j] = j
 
-    def _initialize(self, frame: np.ndarray):
+    def _initialize(self, frame):
         h, w, _ = frame.shape
         padded = np.pad(frame, ((1, 1), (1, 1), (0, 0)), mode="reflect")
-        offsets = np.array(
-            [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
-        )
-        choices = np.random.choice([0, 1, 2, 3, 4, 5, 6, 7], size=(h, w, self.N))
-        choices_offsets = offsets[choices]  # (h, w, 20, 2)
-        choices_offsets_x = choices_offsets[:, :, :, 0]
-        choices_offsets_y = choices_offsets[:, :, :, 1]
+        yy, xx = np.mgrid[:h, :w]
+        LOWER, UPPER = -1, 1
+        dy = np.random.randint(LOWER, UPPER + 1, (h, w, self.N))
+        dx = np.random.randint(LOWER, UPPER + 1, (h, w, self.N))
+        rows_3d = yy[:, :, None] # broadcast to shape (h, w, 1)
+        cols_3d = xx[:, :, None] # broadcast to shape (h, w, 1)
+        neighbour_rows = rows_3d + 1 + dy # (h, w, N) ! broadcast to shape (h, w, N)
+        neighbour_cols = cols_3d + 1 + dx # +1 for padding offset
+        samples = padded[neighbour_rows, neighbour_cols]
+        return samples # (h, w, N, 3)
 
-        xx, yy = np.meshgrid(np.arange(w), np.arange(h))
-        coors_x = xx[:, :, None] + choices_offsets_x  # (h, w, 20)
-        coors_y = yy[:, :, None] + choices_offsets_y  # (h, w, 20)
+    def segment(self, frame):
+        diff = self.samples.astype(np.int32) - frame[:, :, None, :] # (h, w, N, 3)
+        counts = np.sum((np.sum(diff**2, axis=-1) < self.R**2), axis=-1) # (h, w)
+        self._mask = np.where(counts < self.min_count, 255, 0).astype(np.uint8)
+        return self._mask
 
-        self.models = np.zeros((h, w, 3, self.N), dtype=np.uint8)  # (h, w, 3, 20)
-        self.models[:, :, :, :] = padded[coors_y, coors_x, :].transpose(
-            0, 1, 3, 2
-        )  # note: coors_x and _y broadcasting to (h, w, 20) inserted before channel
+    def update(self, frame):
+        # select if nearby current model pixels and if random number < time_sampling_prob
+        selected = (self._mask == 0) & (np.random.rand(self.h, self.w) < self.time_sampling_prob)  # (h, w) bool
+        values = frame[selected]  # (nb_selected, 3), E[nb_selected] = time_sampling_prob*(h*w)
+        nb_selected = values.shape[0]
 
-    def _count_at_distance(self, frame):
-        diff = self.models - frame[:, :, :, None]
-        sq_dist = np.sum(diff**2, axis=2)
-        dist = np.sqrt(sq_dist)
-        close = dist < self.R
-        counts = np.sum(close, axis=2)
-        return counts
+        ys = self.rows[selected] # (nb_selected,)
+        xs = self.cols[selected] # (nb_selected,)
 
-    def _to_update(self, frame):
-        h, w, _ = frame.shape
-        return np.random.rand(h, w) <= self.time_sampling_prob
+        # which neighboring pixel to update
+        LOWER, UPPER = -1, 1
+        ny = np.clip(ys + np.random.randint(LOWER, UPPER + 1, nb_selected), 0, self.h - 1) # clip indexing to boundaries
+        nx = np.clip(xs + np.random.randint(LOWER, UPPER + 1, nb_selected), 0, self.w - 1)
+        nth_plane = np.random.randint(0, self.N, nb_selected) # plane to update
+        self.samples[ny, nx, nth_plane] = values
 
-    def _get_random_neighboring_pixel(self, coord_x, coord_y, frame):
-        h, w, _ = frame.shape
-
-        row = np.random.randint(max(0, coord_y - 1), min(coord_y + 2, h - 1))
-        if row == coord_y - 1 or row == coord_y + 1:
-            col = np.random.randint(max(0, coord_x - 1), min(coord_x + 2, w - 1))
-        elif row == coord_y:
-            col = np.random.choice([max(0, coord_x - 1), min(coord_x + 1, w - 1)])
-
-        return (row, col)
-
-    def update(self, frame: np.ndarray):
-        if self.models is None:
-            self._initialize(frame)
-        elif isinstance(self.models, np.ndarray):
-            counts = self._count_at_distance(frame)
-            to_update = self._to_update(frame)
-
-            h, w, _ = frame.shape
-            for i in range(h):
-                for j in range(w):
-                    if to_update[i, j]:
-                        if counts[i, j] < self.min_count:
-                            continue
-
-                        n = np.random.randint(0, self.N)
-                        self.models[i, j, :, n] = frame[i, j, :]
-
-                        n = np.random.randint(0, self.N)
-                        i_neighbor, j_neighbor = self._get_random_neighboring_pixel(
-                            j, i, frame
-                        )
-                        self.models[i_neighbor, j_neighbor, :, n] = frame[i, j, :]
-
-    def update_and_display(self, frame: np.ndarray, display_size=(1920, 1080)):
-        self.update(frame)
-        current_model = np.median(self.models, axis=3).astype(np.uint8)
-
-        # half display size
-        display_size = (display_size[0] // 2, display_size[1] // 2)
-
-        model_resized = cv2.resize(current_model, display_size)
-        frame_resized = cv2.resize(frame, display_size)
-        screen = cv2.hconcat([model_resized, frame_resized])
-        cv2.imshow("ViBe", screen)
-        cv2.waitKey(5)
-
-    def segmentation(self, frame: np.ndarray):
-        pass
-
+        self.B = np.median(self.samples, axis=2).astype(np.float32)
