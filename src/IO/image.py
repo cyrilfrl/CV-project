@@ -19,7 +19,7 @@ def _get_output_path(video_name: str) -> str:
     path = parent_dir / "outputs" / Path(video_name)
     return str(path)
 
-def save_output(output_name: str, frame: np.ndarray) -> None:
+def save_output(frame: np.ndarray, output_name: str) -> None:
     output_path = _get_output_path(output_name)
     cv2.imwrite(output_path, frame)
     logger.info(f"Output saved to: {output_path}")

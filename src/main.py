@@ -1,38 +1,39 @@
 import argparse
 import logging
 
-import cv2
-import numpy as np
-
-from .filters import mean_non_masked, smooth_image
+from .IO.image import save_output
 from .IO.video import load_vid
-from .segmentation.segmentation import FrameDifferencing  # , segment_people_batch
+from .segmentation.segmentation import BackgroundSubtractor, FrameDifferencing, ViBe
+from .utils import resize_frames
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # constants definition
 DEFAULT_VIDEO_NAME = "group_1_phase1_static_indoor.mp4"
-DEFAULT_SEGMENTATION_METHOD = "DIFF"  # "DNN"
+DEFAULT_SEGMENTATION_METHOD = "DIFF"
+SEGMENTERS = {"DIFF": FrameDifferencing, "VIBE": ViBe}
 DEFAULT_TEMPORAL_FILTERING_METHOD = "MNM"
 DEFAULT_SMOOTHING_METHOD = "NONE"
-
-SEGMENTERS = {"DIFF": FrameDifferencing}  # "DNN": segment_people_batch,
-FILTERS = {"MNM": mean_non_masked}
-SMOOTHERS = {
-    "KERNEL": lambda img: smooth_image(img, kernel_size=5),
-    "NONE": lambda img: img,
-}
-
+DEFAULT_SIZE = (960, 540)
+DEFAULT_HEADLESS = False
 
 def run_pipeline(
-    frames, segmentation: str, filtering: str, smoothing: str
-) -> np.ndarray:
-    frames_masked, frames_masks = SEGMENTERS[segmentation](frames)
-    img = FILTERS[filtering](frames_masked, frames_masks)
-    img = SMOOTHERS[smoothing](img)
-    return img
+    frames, segmentation: str, size: tuple[int, int] = DEFAULT_SIZE, headless: bool = DEFAULT_HEADLESS
+) -> BackgroundSubtractor:
+    frames = resize_frames(frames, size=size)
+    if headless:
+        segmenter = SEGMENTERS[segmentation](frames[0])
+        segmenter.pipeline(frames[1:])    
+    else:
+        for idx, frame in enumerate(frames):
+            logger.info(f"Frame {idx + 1}/{len(frames)}")
+            segmentation_mask = segmenter.segment(frame)
+            background = segmenter.update(frame)
 
+
+
+    return segmenter
 
 def main():
     parser = argparse.ArgumentParser()
@@ -49,6 +50,8 @@ def main():
         default=DEFAULT_SMOOTHING_METHOD,
         choices=["KERNEL", "NONE"],
     )
+    parser.add_argument("--size", type=int, nargs=2, default=DEFAULT_SIZE)
+    parser.add_argument("--headless", type=bool, default=DEFAULT_HEADLESS)
     args = parser.parse_args()
 
     frames = load_vid(
@@ -56,20 +59,5 @@ def main():
     )
     logger.info(f"Number of frames loaded: {len(frames)}")
 
-    # REMOVE THIS AS SOON AS POSSIBLE
-    frames = [cv2.resize(frame, (960, 540)) for frame in frames]
-    from .segmentation.segmentation import ViBe
-
-    model = ViBe()
-
-    idx = 0
-    for idx, frame in enumerate(frames):
-        model.update_and_display(frame)
-        print(f"Processed frame {idx + 1}/{len(frames)}")
-
-    cv2.destroyAllWindows()
-
-    # img = run_pipeline(frames, args.segmentation, args.filtering, args.smoothing)
-
-    # # save image
-    # save_output(f"output_{args.segmentation}_{args.filtering}_{args.smoothing}_{args.step_frames}.png", img)
+    segmenter = run_pipeline(frames, args.segmentation, tuple(args.size), args.headless)
+    save_output(segmenter._background(), f"background_{args.segmentation}_{args.filtering}_{args.smoothing}_{args.step_frames}.png")

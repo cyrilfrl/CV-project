@@ -5,10 +5,15 @@ import cv2
 import numpy as np
 from scipy.ndimage import binary_fill_holes
 
+FILTERS = {"MNM": mean_non_masked}
+SMOOTHERS = {
+    "KERNEL": lambda img: smooth_image(img, kernel_size=5),
+    "NONE": lambda img: img,
+}
+
 # ####################################################################################################
 #                                             Background Subtractor                                  #
 # ####################################################################################################
-
 
 class BackgroundSubtractor(ABC):
     @abstractmethod
@@ -26,43 +31,14 @@ class BackgroundSubtractor(ABC):
     def segment(self, frame: np.ndarray | list[np.ndarray]) -> np.ndarray:
         pass
 
+    def pipeline(self, frames: np.ndarray | list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+        for frame in frames:
+            self.segment(frame)
+            self.update(frame)
 
 # ####################################################################################################
-#                                             Neural Network                                         #
+#                                            Frame Differencing                                      #
 # ####################################################################################################
-
-# class FrameDifferencing(BackgroundSubtractor):
-#     def __init__(self, frame: np.ndarray, step_size=1):
-#         super().__init__(frame)
-#         self.prev_frame = frame
-#         self.step_size = step_size
-
-#     def _diff_frames(self, frames):
-#         # rgb version: 47 ms ± 13.7 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
-#         # gray version: 441 ms ± 87.3 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
-#         return [cv2.absdiff(frames[i], frames[i - self.step_size]) for i in range(self.step_size, len(frames), self.step_size)]
-
-#     def _threshold_diffs(frames_diff, threshold=15, set_to=1):
-#         return [cv2.threshold(frame, threshold, set_to, cv2.THRESH_BINARY)[1] for frame in [cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) for frame in frames_diff]]
-
-#     def _fill_masks(frames_masks):
-#         return [1- binary_fill_holes(mask) for mask in frames_masks]
-
-#     def segment(self, frame: np.ndarray, steps=1) -> np.ndarray:
-#         frames_differenced = self._diff_frames(frame, step=steps)
-#         frames_masks = self._threshold_diffs(frames_differenced, threshold=15)
-#         frames_masks = self._fill_masks(frames_masks)
-
-#         # frames_segmented, frames_masks = self._segment_frame_mask(
-#         #     ,
-#         #     frames_masks,
-#         # )
-
-#         print(f"{len(frames_segmented)} frames generated")
-#         print(f"{len(frames_masks)} masks generated")
-
-#         return frames_segmented, frames_masks
-
 
 class FrameDifferencing(BackgroundSubtractor):
     def __init__(self, frame, step_size=1, threshold=15):
@@ -82,7 +58,6 @@ class FrameDifferencing(BackgroundSubtractor):
 
     def _background(self):
         return
-
 
 # ####################################################################################################
 # #                                            ViBe                                                  #
