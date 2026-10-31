@@ -2,7 +2,7 @@ import argparse
 import logging
 
 from .IO.image import save_output
-from .IO.video import load_vid
+from .IO.video import Display, load_vid
 from .segmentation.segmentation import BackgroundSubtractor, FrameDifferencing, ViBe
 from .utils import resize_frames
 
@@ -15,23 +15,27 @@ DEFAULT_SEGMENTATION_METHOD = "DIFF"
 SEGMENTERS = {"DIFF": FrameDifferencing, "VIBE": ViBe}
 DEFAULT_TEMPORAL_FILTERING_METHOD = "MNM"
 DEFAULT_SMOOTHING_METHOD = "NONE"
-DEFAULT_SIZE = (960, 540)
+DEFAULT_SIZE = (1080, 720)
 DEFAULT_HEADLESS = False
+SMOOTHING_METHODS = ["KERNEL", "NONE"]
+DEFAULT_OUTPUT_NAME = "output.png"
 
 def run_pipeline(
-    frames, segmentation: str, size: tuple[int, int] = DEFAULT_SIZE, headless: bool = DEFAULT_HEADLESS
+    frames, segmentation: str, size: tuple[int, int] = DEFAULT_SIZE, headless: bool = DEFAULT_HEADLESS, output_name: str = "output.png"
 ) -> BackgroundSubtractor:
     frames = resize_frames(frames, size=size)
+    segmenter = SEGMENTERS[segmentation](frames[0])
     if headless:
-        segmenter = SEGMENTERS[segmentation](frames[0])
         segmenter.pipeline(frames[1:])    
     else:
+        display = Display()
         for idx, frame in enumerate(frames):
             logger.info(f"Frame {idx + 1}/{len(frames)}")
-            segmentation_mask = segmenter.segment(frame)
-            background = segmenter.update(frame)
+            segmenter.segment(frame)
+            segmenter.update(frame)
+            display.update(frame, segmenter._background())
 
-
+    save_output(segmenter._background(), output_name)
 
     return segmenter
 
@@ -41,17 +45,11 @@ def main():
     parser.add_argument("--max-frames", type=int, default=200)
     parser.add_argument("--step-frames", type=int, default=10)
     parser.add_argument("--segmentation", type=str, default=DEFAULT_SEGMENTATION_METHOD)
-    parser.add_argument(
-        "--filtering", type=str, default=DEFAULT_TEMPORAL_FILTERING_METHOD
-    )
-    parser.add_argument(
-        "--smoothing",
-        type=str,
-        default=DEFAULT_SMOOTHING_METHOD,
-        choices=["KERNEL", "NONE"],
-    )
+    parser.add_argument("--filtering", type=str, default=DEFAULT_TEMPORAL_FILTERING_METHOD)
+    parser.add_argument("--smoothing", type=str, default=DEFAULT_SMOOTHING_METHOD, choices=SMOOTHING_METHODS)
     parser.add_argument("--size", type=int, nargs=2, default=DEFAULT_SIZE)
     parser.add_argument("--headless", type=bool, default=DEFAULT_HEADLESS)
+    parser.add_argument("--output", type=str, default="output.png")
     args = parser.parse_args()
 
     frames = load_vid(
@@ -59,5 +57,4 @@ def main():
     )
     logger.info(f"Number of frames loaded: {len(frames)}")
 
-    segmenter = run_pipeline(frames, args.segmentation, tuple(args.size), args.headless)
-    save_output(segmenter._background(), f"background_{args.segmentation}_{args.filtering}_{args.smoothing}_{args.step_frames}.png")
+    run_pipeline(frames, args.segmentation, tuple(args.size), args.headless, args.output)

@@ -5,11 +5,11 @@ import cv2
 import numpy as np
 from scipy.ndimage import binary_fill_holes
 
-FILTERS = {"MNM": mean_non_masked}
-SMOOTHERS = {
-    "KERNEL": lambda img: smooth_image(img, kernel_size=5),
-    "NONE": lambda img: img,
-}
+# FILTERS = {"MNM": mean_non_masked}
+# SMOOTHERS = {
+#     "KERNEL": lambda img: smooth_image(img, kernel_size=5),
+#     "NONE": lambda img: img,
+# }
 
 # ####################################################################################################
 #                                             Background Subtractor                                  #
@@ -18,10 +18,11 @@ SMOOTHERS = {
 class BackgroundSubtractor(ABC):
     @abstractmethod
     def __init__(self, frame: np.ndarray):
-        self.B = np.zeros_like(frame, dtype=np.uint8)
+        self.B = frame.astype(np.float32)
+        self._mask = np.zeros_like(frame, dtype=np.uint8)
 
     def _background(self) -> np.ndarray:
-        return np.array(self.B, dtype=np.uint8)
+        return self.B.astype(np.uint8)
 
     @abstractmethod
     def update(self, frame: np.ndarray | list[np.ndarray]) -> None:
@@ -41,23 +42,26 @@ class BackgroundSubtractor(ABC):
 # ####################################################################################################
 
 class FrameDifferencing(BackgroundSubtractor):
-    def __init__(self, frame, step_size=1, threshold=15):
+    def __init__(self, frame, step_size=30, threshold=15, alpha=0.05):
+        super().__init__(frame)
         self.step_size = step_size
         self.threshold = threshold
+        self.alpha = alpha
         self.buffer = deque([frame], maxlen=step_size)
+
+    def update(self, frame: np.ndarray) -> None:
+        self.buffer.append(frame)
+        candidate_B = self.alpha * frame + (1 - self.alpha) * self.B
+        keep = self._mask == 0
+        self.B[keep] = candidate_B[keep]
 
     def segment(self, frame):
         diff = cv2.absdiff(frame, self.buffer[0])
         gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
         _, mask = cv2.threshold(gray, self.threshold, 255, cv2.THRESH_BINARY)
         mask = binary_fill_holes(mask > 0).astype(np.uint8) * 255
+        self._mask = mask
         return mask
-
-    def update(self, frame):
-        self.buffer.append(frame)
-
-    def _background(self):
-        return
 
 # ####################################################################################################
 # #                                            ViBe                                                  #

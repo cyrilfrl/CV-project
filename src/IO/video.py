@@ -35,3 +35,11 @@ def load_vid(video_name: str, selected_frames: set[int] | None = None) -> list[n
 
     capture.release()
     return [records[idx]["frame"] for idx in records if selected_frames is None or idx in selected_frames]
+
+class Display:
+    def __init__(self):
+        cv2.namedWindow("Live display", cv2.WINDOW_NORMAL)
+    
+    def update(self, *images) -> None:
+        cv2.imshow("Live display", np.hstack(images))
+        cv2.waitKey(1)

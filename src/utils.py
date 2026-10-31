@@ -13,11 +13,3 @@ def _get_parent_dir() -> Path:
 
 def resize_frames(frames, size=(960, 540)):
     return [cv2.resize(frame, size) for frame in frames]
-
-def display_frame(frame, mask):
-    cv2.imshow("Frame", frame)
-    cv2.imshow("Mask", mask)
-
-
-        model.update_and_display(frame)
-        print(f"Processed frame {idx + 1}/{len(frames)}")
