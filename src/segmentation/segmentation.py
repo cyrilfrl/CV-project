@@ -165,6 +165,8 @@ class ViBe(BackgroundSubtractor):
         nth_plane = np.random.randint(0, self.N, nb_selected)  # plane to update
         self.samples[ny, nx, nth_plane] = values
 
+        self.B = np.median(self.samples, axis=2).astype(np.float32)
+
         self.history.append((frame.copy(), self._mask.copy()))
 
     def ghosts(self, k: int = 15) -> np.ndarray:
