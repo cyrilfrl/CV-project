@@ -48,12 +48,15 @@ class FrameDifferencing(BackgroundSubtractor):
         self.threshold = threshold
         self.alpha = alpha
         self.buffer = deque([frame], maxlen=step_size)
+        self.history = []
 
     def update(self, frame: np.ndarray) -> None:
         self.buffer.append(frame)
         candidate_B = self.alpha * frame + (1 - self.alpha) * self.B
         keep = self._mask == 0
         self.B[keep] = candidate_B[keep]
+        self.history.append((frame.copy(), self._mask.copy()))
+        
 
     def segment(self, frame):
         diff = cv2.absdiff(frame, self.buffer[0])
@@ -62,6 +65,19 @@ class FrameDifferencing(BackgroundSubtractor):
         mask = binary_fill_holes(mask > 0).astype(np.uint8) * 255
         self._mask = mask
         return mask
+
+    def ghosts(self, k: int = 15) -> np.array:
+        ghost_img = self.B.copy().astype(np.float32)
+        N = len(self.history)
+
+        index = np.linspace(N - 1 - 5 * k, N - 1, k, dtype=int)
+        opacity = np.linspace(1.0 / k, 1.0, k)
+        
+        for i, idx in enumerate(index):
+            f, m = self.history[idx]
+            fg_mask = m > 0
+            ghost_img[fg_mask] = (opacity[i] * f[fg_mask] + (1 - opacity[i]) * ghost_img[fg_mask])
+        return ghost_img.astype(np.uint8) 
 
 # ####################################################################################################
 # #                                            ViBe                                                  #
@@ -77,6 +93,7 @@ class ViBe(BackgroundSubtractor):
         self.samples = self._initialize(frame) # (h, w, N, 3)
         self.h, self.w, _ = frame.shape
         self.rows, self.cols = np.mgrid[:self.h, :self.w]   # rows[i, j] = i, cols[i, j] = j
+        self.history = []
 
     def _initialize(self, frame):
         h, w, _ = frame.shape
@@ -115,3 +132,20 @@ class ViBe(BackgroundSubtractor):
         self.samples[ny, nx, nth_plane] = values
 
         self.B = np.median(self.samples, axis=2).astype(np.float32)
+
+        self.history.append((frame.copy(), self._mask.copy()))
+
+    def ghosts(self, k: int = 15) -> np.ndarray:
+        ghost_img = self.B.copy().astype(np.float32)
+        N = len(self.history)
+
+        index = np.linspace( N - 1 - 5 * k, N - 1, k, dtype=int)
+        opacity = np.linspace(1.0 / k, 1.0, k)
+        
+        for i, idx in enumerate(index):
+            f, m = self.history[idx]
+            fg_mask = m > 0
+            
+            ghost_img[fg_mask] = (opacity[i] * f[fg_mask] + (1 - opacity[i]) * ghost_img[fg_mask])
+            
+        return ghost_img.astype(np.uint8)

@@ -35,7 +35,9 @@ def run_pipeline(
             segmenter.update(frame)
             display.update(frame, segmenter._background())
 
-    save_output(segmenter._background(), output_name)
+    #save_output(segmenter._background(), output_name)
+    save_output(segmenter.ghosts(), output_name)
+    
 
     return segmenter
 
