@@ -90,11 +90,9 @@ class ViBe(BackgroundSubtractor):
         self.N, self.R = N, R # N: number of samples per pixel, R: radius for matching [RGB distance]
         self.min_count = min_count # minimum number of matches to consider a pixel as background
         self.time_sampling_prob = time_sampling_prob # probability of updating the model at each time step
-        self.h, self.w, self.c = frame.shape
         self.samples = self._initialize(frame) # (h, w, N, 3)
         self.h, self.w, _ = frame.shape
         self.rows, self.cols = np.mgrid[:self.h, :self.w]   # rows[i, j] = i, cols[i, j] = j
-        self.B = np.median(self.samples, axis=2).astype(np.float32)
         self.history = []
 
     def _initialize(self, frame):
@@ -132,8 +130,6 @@ class ViBe(BackgroundSubtractor):
         nx = np.clip(xs + np.random.randint(LOWER, UPPER + 1, nb_selected), 0, self.w - 1)
         nth_plane = np.random.randint(0, self.N, nb_selected) # plane to update
         self.samples[ny, nx, nth_plane] = values
-
-        self.B = np.median(self.samples, axis=2).astype(np.float32)
 
         self.history.append((frame.copy(), self._mask.copy()))
 
