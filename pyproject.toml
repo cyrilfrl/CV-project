@@ -25,3 +25,6 @@ packages = ["src"]
 
 [project.scripts]
 main = "src.main:main"
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
