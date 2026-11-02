@@ -54,12 +54,6 @@ class FrameDifferencing(BackgroundSubtractor):
         self.ghost_past = ghost_past
         self.buffer = deque([(frame, self._mask)], maxlen=ghost_past)
 
-    def update(self, frame: np.ndarray) -> None:
-        self.buffer.append((frame, self._mask))
-        candidate_B = self.alpha * frame + (1 - self.alpha) * self.B
-        keep = self._mask == 0
-        self.B[keep] = candidate_B[keep]
-
     def segment(self, frame):
         diff_frame = (
             self.buffer[0][0]
@@ -76,6 +70,13 @@ class FrameDifferencing(BackgroundSubtractor):
         mask = (diff & diff_bg).astype(np.uint8) * 255
         self._mask = mask
         return mask
+
+    def update(self, frame: np.ndarray) -> None:
+        self.buffer.append((frame, self._mask))
+        candidate_B = self.alpha * frame + (1 - self.alpha) * self.B
+        keep = self._mask == 0
+        self.B[keep] = candidate_B[keep]
+
 
     def ghosts(self, ghost_number: int = 10) -> np.ndarray:
         ghost_img = self.B.copy().astype(np.float32)
@@ -102,28 +103,22 @@ class ViBe(BackgroundSubtractor):
     def __init__(self, frame, N=20, R=20, min_count=2, time_sampling_prob=0.15):
         super().__init__(frame)
         self.models = None
+        self.h, self.w, _ = frame.shape
         self.N, self.R =  N, R  # N: number of samples per pixel, R: radius for matching [RGB distance]
         self.min_count = min_count # minimum number of matches to consider a pixel as background
         self.time_sampling_prob = time_sampling_prob # probability of updating the model at each time step
+        self.shape_buffer = (self.h, self.w, self.N, 3)    # include padding in the size
         self.samples = self._initialize(frame)  # (h, w, N, 3)
-        self.h, self.w, _ = frame.shape
         self.rows, self.cols = np.mgrid[
             : self.h, : self.w
         ]  # rows[i, j] = i, cols[i, j] = j
         self.history = []
 
     def _initialize(self, frame):
-        h, w, _ = frame.shape
-        padded = np.pad(frame, ((1, 1), (1, 1), (0, 0)), mode="reflect")
-        yy, xx = np.mgrid[:h, :w]
-        LOWER, UPPER = -1, 1
-        dy = np.random.randint(LOWER, UPPER + 1, (h, w, self.N))
-        dx = np.random.randint(LOWER, UPPER + 1, (h, w, self.N))
-        rows_3d = yy[:, :, None]  # broadcast to shape (h, w, 1)
-        cols_3d = xx[:, :, None]  # broadcast to shape (h, w, 1)
-        neighbour_rows = rows_3d + 1 + dy  # (h, w, N) ! broadcast to shape (h, w, N)
-        neighbour_cols = cols_3d + 1 + dx  # +1 for padding offset
-        samples = padded[neighbour_rows, neighbour_cols]
+        frame_buffer = frame[:, :, None, :]
+        LOWER, UPPER = -5, 5
+        noise = np.random.randint(LOWER, UPPER + 1, self.shape_buffer)
+        samples = np.clip(frame_buffer + noise, 0, 255).astype(np.uint8)
         return samples  # (h, w, N, 3)
 
     def segment(self, frame):
