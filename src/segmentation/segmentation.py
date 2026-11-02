@@ -43,10 +43,9 @@ class BackgroundSubtractor(ABC):
 #                                            Frame Differencing                                      #
 # ####################################################################################################
 
-
 class FrameDifferencing(BackgroundSubtractor):
     def __init__(
-        self, frame, step_size=40, threshold=15, alpha=0.05, ghost_past: int = 75
+        self, frame, step_size=30, threshold=15, alpha=0.05, ghost_past: int = 75
     ):
         super().__init__(frame)
         self.step_size = step_size
@@ -79,7 +78,6 @@ class FrameDifferencing(BackgroundSubtractor):
         return mask
 
     def ghosts(self, ghost_number: int = 10) -> np.ndarray:
-        # last_img = self.B.copy().astype(np.float32)
         ghost_img = self.B.copy().astype(np.float32)
 
         index = np.linspace(-self.ghost_past, -1, ghost_number, dtype=int)
@@ -104,16 +102,9 @@ class ViBe(BackgroundSubtractor):
     def __init__(self, frame, N=20, R=20, min_count=2, time_sampling_prob=0.15):
         super().__init__(frame)
         self.models = None
-        self.N, self.R = (
-            N,
-            R,
-        )  # N: number of samples per pixel, R: radius for matching [RGB distance]
-        self.min_count = (
-            min_count  # minimum number of matches to consider a pixel as background
-        )
-        self.time_sampling_prob = (
-            time_sampling_prob  # probability of updating the model at each time step
-        )
+        self.N, self.R =  N, R  # N: number of samples per pixel, R: radius for matching [RGB distance]
+        self.min_count = min_count # minimum number of matches to consider a pixel as background
+        self.time_sampling_prob = time_sampling_prob # probability of updating the model at each time step
         self.samples = self._initialize(frame)  # (h, w, N, 3)
         self.h, self.w, _ = frame.shape
         self.rows, self.cols = np.mgrid[
