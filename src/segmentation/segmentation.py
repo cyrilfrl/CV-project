@@ -45,7 +45,7 @@ class BackgroundSubtractor(ABC):
 
 class FrameDifferencing(BackgroundSubtractor):
     def __init__(
-        self, frame, step_size=30, threshold=15, alpha=0.05, ghost_past: int = 75
+        self, frame, step_size=30, threshold=15, alpha=0.05, ghost_past: int = 150
     ):
         super().__init__(frame)
         self.step_size = step_size
@@ -77,7 +77,7 @@ class FrameDifferencing(BackgroundSubtractor):
         self._mask = mask
         return mask
 
-    def ghosts(self, ghost_number: int = 10) -> np.ndarray:
+    def ghosts(self, ghost_number: int = 15) -> np.ndarray:
         ghost_img = self.B.copy().astype(np.float32)
 
         index = np.linspace(-self.ghost_past, -1, ghost_number, dtype=int)
@@ -88,7 +88,7 @@ class FrameDifferencing(BackgroundSubtractor):
             fg_mask = m > 0
             ghost_img[fg_mask] = (
                 opacity[i] * f[fg_mask] + (1 - opacity[i]) * ghost_img[fg_mask]
-                )
+            )
 
         return ghost_img.astype(np.uint8)
 
@@ -99,7 +99,7 @@ class FrameDifferencing(BackgroundSubtractor):
 
 
 class ViBe(BackgroundSubtractor):
-    def __init__(self, frame, N=20, R=20, min_count=2, time_sampling_prob=0.15):
+    def __init__(self, frame, N=20, R=20, min_count=2, time_sampling_prob=0.15, ghost_past=150):
         super().__init__(frame)
         self.models = None
         self.N, self.R =  N, R  # N: number of samples per pixel, R: radius for matching [RGB distance]
@@ -110,7 +110,8 @@ class ViBe(BackgroundSubtractor):
         self.rows, self.cols = np.mgrid[
             : self.h, : self.w
         ]  # rows[i, j] = i, cols[i, j] = j
-        self.history = []
+        self.ghost_past = ghost_past
+        self.buffer = deque([(frame, self._mask)], maxlen=ghost_past)
 
     def _initialize(self, frame):
         h, w, _ = frame.shape
@@ -158,17 +159,16 @@ class ViBe(BackgroundSubtractor):
 
         self.B = np.median(self.samples, axis=2).astype(np.float32)
 
-        self.history.append((frame.copy(), self._mask.copy()))
+        self.buffer.append((frame, self._mask))
 
-    def ghosts(self, k: int = 15) -> np.ndarray:
+    def ghosts(self, ghost_number: int = 15) -> np.ndarray:
         ghost_img = self.B.copy().astype(np.float32)
-        N = len(self.history)
 
-        index = np.linspace(N - 1 - 5 * k, N - 1, k, dtype=int)
-        opacity = np.linspace(1.0 / k, 1.0, k)
+        index = np.linspace(-self.ghost_past, -1, ghost_number, dtype=int)
+        opacity = np.linspace(1.0 / ghost_number, 1.0, ghost_number)
 
         for i, idx in enumerate(index):
-            f, m = self.history[idx]
+            f, m = self.buffer[idx]
             fg_mask = m > 0
 
             ghost_img[fg_mask] = (
