@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from collections import deque
 
 import cv2
+from matplotlib.pyplot import hist
 import numpy as np
 from scipy.ndimage import binary_fill_holes
 
@@ -134,9 +135,7 @@ class ViBe(BackgroundSubtractor):
         selected = (self._mask == 0) & (
             np.random.rand(self.h, self.w) < self.time_sampling_prob
         )  # (h, w) bool
-        values = frame[
-            selected
-        ]  # (nb_selected, 3), E[nb_selected] = time_sampling_prob*(h*w)
+        values = frame[ selected ]  # (nb_selected, 3), E[nb_selected] = time_sampling_prob*(h*w)
         nb_selected = values.shape[0]
 
         ys = self.rows[selected]  # (nb_selected,)
@@ -167,6 +166,45 @@ class ViBe(BackgroundSubtractor):
             f, m = self.buffer[idx]
             fg_mask = m > 0
 
+            ghost_img[fg_mask] = (
+                opacity[i] * f[fg_mask] + (1 - opacity[i]) * ghost_img[fg_mask]
+            )
+
+        return ghost_img.astype(np.uint8)
+
+
+# ####################################################################################################
+#                                            Mixture of Gaussian                                     #
+# ####################################################################################################
+
+class MixtureOfGaussian(BackgroundSubtractor):
+    def __init__(
+        self, frame, step_size=30, threshold=15, alpha=0.01, ghost_past: int = 150
+    ):
+        super().__init__(frame)
+        self.backsub = cv2.createBackgroundSubtractorMOG2(history=250)
+        self.alpha = alpha
+        self.ghost_past = ghost_past
+        self.buffer = deque([(frame, self._mask)], maxlen=ghost_past)
+
+    def segment(self, frame):
+        self._mask = self.backsub.apply(frame)
+        self.buffer.append((frame, self._mask))
+        return self._mask
+
+    def update(self, frame: np.ndarray) -> None:
+        self.B = self.backsub.getBackgroundImage()
+
+
+    def ghosts(self, ghost_number: int = 15) -> np.ndarray:
+        ghost_img = self.B.copy().astype(np.float32)
+
+        index = np.linspace(-self.ghost_past, -1, ghost_number, dtype=int)
+        opacity = np.linspace(1.0 / ghost_number, 1.0, ghost_number)
+
+        for i, idx in enumerate(index):
+            f, m = self.buffer[idx]
+            fg_mask = m > 0
             ghost_img[fg_mask] = (
                 opacity[i] * f[fg_mask] + (1 - opacity[i]) * ghost_img[fg_mask]
             )

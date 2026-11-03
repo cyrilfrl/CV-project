@@ -3,7 +3,7 @@ import logging
 
 from .IO.image import save_output
 from .IO.video import Display, load_vid
-from .segmentation.segmentation import BackgroundSubtractor, FrameDifferencing, ViBe
+from .segmentation.segmentation import BackgroundSubtractor, FrameDifferencing, ViBe, MixtureOfGaussian
 from .utils import resize_frames
 
 logging.basicConfig(level=logging.INFO)
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # constants definition
 DEFAULT_VIDEO_NAME = "group_1_phase1_static_indoor.mp4"
 DEFAULT_SEGMENTATION_METHOD = "DIFF"
-SEGMENTERS = {"DIFF": FrameDifferencing, "VIBE": ViBe}
+SEGMENTERS = {"DIFF": FrameDifferencing, "VIBE": ViBe, "MOG2": MixtureOfGaussian}
 DEFAULT_TEMPORAL_FILTERING_METHOD = "MNM"
 DEFAULT_SMOOTHING_METHOD = "NONE"
 DEFAULT_SIZE = (1080, 720)
