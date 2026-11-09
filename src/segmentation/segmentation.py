@@ -1,3 +1,4 @@
+from matplotlib.pylab import var
 from abc import ABC, abstractmethod
 from collections import deque
 
@@ -179,21 +180,26 @@ class ViBe(BackgroundSubtractor):
 
 class MixtureOfGaussian(BackgroundSubtractor):
     def __init__(
-        self, frame, step_size=30, threshold=15, alpha=0.01, ghost_past: int = 150
+        self, frame, ghost_past: int = 150
     ):
         super().__init__(frame)
-        self.backsub = cv2.createBackgroundSubtractorMOG2(history=250)
-        self.alpha = alpha
+        self.backsub = cv2.createBackgroundSubtractorMOG2(history=200)
         self.ghost_past = ghost_past
+        self.kernel_open = cv2.getStructuringElement(cv2.MORPH_OPEN, (5, 5))
+        self.kernel_close= cv2.getStructuringElement(cv2.MORPH_CLOSE, (30, 30))
         self.buffer = deque([(frame, self._mask)], maxlen=ghost_past)
 
     def segment(self, frame):
         self._mask = self.backsub.apply(frame)
+        _, self._mask = cv2.threshold(self._mask, 127, 255, cv2.THRESH_BINARY)      # set shadows to background
+        self._mask = cv2.morphologyEx(self._mask, cv2.MORPH_OPEN, self.kernel_open)      # OPEN to remove noise
+        self._mask = cv2.morphologyEx(self._mask, cv2.MORPH_CLOSE, self.kernel_close)     # CLOSE to fill holes
         self.buffer.append((frame, self._mask))
         return self._mask
 
     def update(self, frame: np.ndarray) -> None:
         self.B = self.backsub.getBackgroundImage()
+        self.B = cv2.morphologyEx(self.B, cv2.MORPH_OPEN, self.kernel_open)
 
 
     def ghosts(self, ghost_number: int = 15) -> np.ndarray:
