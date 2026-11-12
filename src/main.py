@@ -5,12 +5,13 @@ from .IO.image import save_output
 from .IO.video import Display, load_vid
 from .segmentation.segmentation import BackgroundSubtractor, FrameDifferencing, ViBe, MixtureOfGaussian
 from .utils import resize_frames
+from .stitching.stitching import stitching_built_in, stitch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # constants definition
-DEFAULT_VIDEO_NAME = "group_1_phase1_static_indoor.mp4"
+DEFAULT_VIDEO_NAME = "group_1_phase2_pan_outdoor.mp4"
 DEFAULT_SEGMENTATION_METHOD = "DIFF"
 SEGMENTERS = {"DIFF": FrameDifferencing, "VIBE": ViBe, "MOG2": MixtureOfGaussian}
 DEFAULT_TEMPORAL_FILTERING_METHOD = "MNM"
@@ -29,6 +30,7 @@ def run_pipeline(
     output_name: str = "output.png",
 ) -> BackgroundSubtractor:
     frames = resize_frames(frames, size=size)
+    """
     segmenter = SEGMENTERS[segmentation](frames[0])
     if headless:
         segmenter.pipeline(frames[1:])
@@ -39,11 +41,13 @@ def run_pipeline(
             segmenter.segment(frame)
             segmenter.update(frame)
             display.update(frame, segmenter._background())
-
+    
     save_output(segmenter._background(), output_name)
     save_output(segmenter.ghosts(), "output_ghost.png")
+    """
+    save_output(stitching_built_in(frames), "output_panorama.png")
 
-    return segmenter
+    return
 
 
 def main():
