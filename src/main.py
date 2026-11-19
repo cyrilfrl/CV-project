@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # constants definition
-DEFAULT_VIDEO_NAME = "group_1_phase3_pan_dynamic_outdoor.mp4"
+DEFAULT_VIDEO_NAME = "group_1_phase3_pan_dynamic_indoor.mp4"
 DEFAULT_SEGMENTATION_METHOD = "DIFF"
 SEGMENTERS = {"DIFF": FrameDifferencing, "VIBE": ViBe, "MOG2": MixtureOfGaussian}
 DEFAULT_TEMPORAL_FILTERING_METHOD = "MNM"
@@ -79,7 +79,7 @@ def phase3(frames, segmentation: str, headless: bool = DEFAULT_HEADLESS):
     for idx, frame in enumerate(frames):
         logger.info(f"Frame {idx + 1}/{len(frames)}")
 
-        # Get the homeography matrix 
+        # Get the homeography matrix
         if idx > 0:
             H_step = get_homeography(frame, frames[idx - 1])
             H_t_to_0 = H_t_to_0 @ H_step
@@ -90,21 +90,21 @@ def phase3(frames, segmentation: str, headless: bool = DEFAULT_HEADLESS):
         # Zone where we can blend the frame safely, flags=cv2.INTER_NEAREST remove some black lines
         valid_zone = cv2.warpPerspective(inner_mask, H_to_pano, (pano_w, pano_h), flags=cv2.INTER_NEAREST)
 
-        # Add part of the frame where it has never been seen (where the panorama is black).
+        # Add part of the frame where it has never been seen (where the panorama is black)
         newly_seen = (valid_zone > 0) & (seen_mask == 0)
         clean_panorama[newly_seen] = warped_frame[newly_seen]
 
         ## Segmentation
         # Put the current frame on the panorama for the background detection
         pano_input = np.where(valid_zone[..., None] > 0, warped_frame, clean_panorama)
-        fg_mask = segmenter.segment(pano_input)
+        mask = segmenter.segment(pano_input)
         segmenter.update(pano_input)
 
         # Increase the mask to detect the border as foreground for a better blending
-        fg_dilated = cv2.dilate(fg_mask, np.ones((15, 15), np.uint8))
+        mask_dilated = cv2.dilate(mask, np.ones((15, 15), np.uint8))
 
         # Update
-        alpha = np.where((valid_zone > 0) & (seen_mask > 0) & (fg_dilated == 0), 0.05, 0.0)
+        alpha = np.where((valid_zone > 0) & (seen_mask > 0) & (mask_dilated == 0), 0.05, 0.0)
         alpha_3d = alpha[..., None]
         clean_panorama = (alpha_3d * warped_frame.astype(np.float32)
                        + (1.0 - alpha_3d) * clean_panorama.astype(np.float32)).astype(np.uint8)

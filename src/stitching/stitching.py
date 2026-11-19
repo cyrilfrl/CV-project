@@ -23,10 +23,12 @@ def stitching_built_in(frames):
     
     return panorama
 
-# The two following function drawn inspiration from the two following website.
+# The two following function drawn inspiration from the three following website.
 # https://blog.thoughtsre.com/p/codewalkthrough-image-stitching-with
 # https://www.opencvhelp.org/tutorials/advanced/image-stitching/
 # accessed on the 12-11-2026
+# https://www.geeksforgeeks.org/data-science/feature-matching-in-opencv/
+# accessed on the 19-11-2026
 def get_homeography(current, previous, nfeatures=4000, k=2, Lowe_threshold=0.75, Ransac_threshold=5.0):
     orb = cv2.ORB_create(nfeatures=nfeatures)
 
