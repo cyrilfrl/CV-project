@@ -23,104 +23,101 @@ def stitching_built_in(frames):
     
     return panorama
 
-
+# The two following function drawn inspiration from the two following website.
 # https://blog.thoughtsre.com/p/codewalkthrough-image-stitching-with
 # https://www.opencvhelp.org/tutorials/advanced/image-stitching/
 # accessed on the 12-11-2026
-def stitch(frames, nfeatures=4000, k=2, Lowe_threshold=0.75, Ransac_threshold=5):
-    # Initialization
+def get_homeography(current, previous, nfeatures=4000, k=2, Lowe_threshold=0.75, Ransac_threshold=5.0):
     orb = cv2.ORB_create(nfeatures=nfeatures)
 
-    # Parameter given by gemini
     FLANN_INDEX_LSH = 6
-    index_params = dict(algorithm=FLANN_INDEX_LSH,
-                        table_number=6,
-                        key_size=12,
-                        multi_probe_level=1)
-    search_params = dict(checks=50)
-    flann = cv2.FlannBasedMatcher(indexParams=index_params, searchParams=search_params)
-    # Alternative
-    #bf = cv2.BFMatcher(cv2.NORM_HAMMING)
-    
-    panorama = frames[0]
+    index_params = dict(algorithm=FLANN_INDEX_LSH, table_number=6, key_size=12, multi_probe_level=1)
+    flann = cv2.FlannBasedMatcher(indexParams=index_params, searchParams=dict(checks=50))
 
-    for i, frame in enumerate(frames[1:], start=1):  
-        # Features detection  
-        
-        panorama_res = orb.detectAndCompute(panorama, None)
-        frame_res = orb.detectAndCompute(frame, None)
+    # Feature detection
+    kp_previous, des_previous = orb.detectAndCompute(previous, None)
+    kp_current, des_current = orb.detectAndCompute(current, None)
+   
+    if des_previous is None or des_current is None or len(des_previous) < 4 or len(des_current) < 4:
+        return np.eye(3, dtype=np.float32)
 
-        # Features matching
-        matches = [_ for _ in flann.knnMatch(panorama_res[1], frame_res[1], k=k) if len(_) == 2]
-        # Alternative
-        # matches = [_ for _ in bf.knnMatch(panorama_res[1], frame_res[1], k=k) if len(_) == 2]
-
-        good_matches = []
-
-        for m, n in matches:
+    # Matching
+    matches = flann.knnMatch(des_previous, des_current, k=k)
+    good_matches = []
+    for match in matches:
+        if len(match) == 2:
+            m, n = match
             if m.distance < Lowe_threshold * n.distance:
                 good_matches.append(m)
+    
+    if len(good_matches) < 4:
+        return np.eye(3, dtype=np.float32)
 
-        good_matches = sorted(good_matches, key=lambda t: t.distance)
+    # Homography
+    src_pts = np.float32([kp_current[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+    dst_pts = np.float32([kp_previous[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+    M, _ = cv2.estimateAffinePartial2D(src_pts, dst_pts, method=cv2.RANSAC, ransacReprojThreshold=Ransac_threshold)
+    if M is None:
+        return np.eye(3, dtype=np.float32)
 
-        if len(good_matches) < 4:
-            print("Not enough good matches")
-            continue
+    H = np.eye(3, dtype=np.float32)
+    H[:2, :] = M
+    return H
 
-        # Homography
-        src_pts = np.float32([frame_res[0][m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-        dst_pts = np.float32([panorama_res[0][m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-        H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, Ransac_threshold)
 
-        # 1st check if the skew is not too big
-        if H is not None:
-            det = np.linalg.det(H[:2, :2])
-            if det < 0.5 or det > 2.0 or abs(H[2, 0]) > 0.002 or abs(H[2, 1]) > 0.002:
-                print("problem with perspective")
-                continue
-        else:
-            print("problem with H")
-            continue
+def stitch(frames):
+    ## Initialization
+    h_img, w_img = frames[0].shape[:2]
+    # Panorama size
+    pano_w, pano_h = w_img * 4, int(h_img * 1.5)
 
-        # Warping
-        h1, w1 = panorama.shape[:2]
-        h2, w2 = frame.shape[:2]
+    # Placement of the 1st frame on the left of the panorama
+    T_offset = np.array([
+        [1, 0, w_img // 2],
+        [0, 1,  h_img // 4],
+        [0, 0, 1]
+    ], dtype=np.float32)
 
-        panorama_corners = np.float32([[0, 0], [0, h1], [w1, h1], [w1, 0]]).reshape((-1, 1, 2))
-        frame_corners = np.float32([[0, 0], [0, h2], [w2, h2], [w2, 0]]).reshape((-1, 1, 2))
+    # Set 1st frame on the panorama
+    first_warped = cv2.warpPerspective(frames[0], T_offset, (pano_w, pano_h))
+    seen_mask = cv2.warpPerspective(
+        np.ones((h_img, w_img), dtype=np.uint8) * 255, T_offset, (pano_w, pano_h)
+    )
 
-        warped_frame_corners = cv2.perspectiveTransform(frame_corners, H)
+    # Background
+    clean_panorama = first_warped.copy()
 
-        all_corners = np.concatenate((panorama_corners, warped_frame_corners), axis=0)
+    # 1st Homoegraphy matrix
+    H_t_to_0 = np.eye(3, dtype=np.float32)
 
-        [xmin, ymin] = np.int32(all_corners.min(axis=0).ravel() - 0.5)
-        [xmax, ymax] = np.int32(all_corners.max(axis=0).ravel() + 0.5)
+    inner_mask = cv2.erode(
+        np.ones((h_img, w_img), dtype=np.uint8) * 255,
+        np.ones((15, 15), np.uint8)
+    )
 
-        t_x = -xmin if xmin < 0 else 0
-        t_y = -ymin if ymin < 0 else 0
+    for idx, frame in enumerate(frames):
+        print(f"Frame {idx + 1}/{len(frames)}")
 
-        w_prime = xmax + t_x
-        h_prime = ymax + t_y
+        # Get the homeography matrix 
+        if idx > 0:
+            H_step = get_homeography(frame, frames[idx - 1])
+            H_t_to_0 = H_t_to_0 @ H_step
+        H_to_pano = T_offset @ H_t_to_0
+        # Warp the current frame
+        warped_frame = cv2.warpPerspective(frame, H_to_pano, (pano_w, pano_h))
 
-        Ht =np.array([[1, 0, t_x],
-                      [0, 1, t_y],
-                      [0, 0, 1]])
+        # Zone where we can blend the frame safely, flags=cv2.INTER_NEAREST remove some black lines
+        valid_zone = cv2.warpPerspective(inner_mask, H_to_pano, (pano_w, pano_h), flags=cv2.INTER_NEAREST)
+        
+        clean_panorama[valid_zone > 0] = warped_frame[valid_zone > 0]
+        
+        # Update pixels seen in the mask
+        seen_mask[valid_zone > 0] = 255
 
-        frame_warped = cv2.warpPerspective(frame, Ht @ H, (w_prime, h_prime))
+    # Crop the panorama to only keep the part with an actual image
+    coords = cv2.findNonZero(seen_mask)
+    if coords is not None:
+        x, y, w, h = cv2.boundingRect(coords)
+        clean_panorama = clean_panorama[y:y+h, x:x+w]
 
-        # Check to not have 9.8 Gb in memory (yes it happened)
-        max_allowed_w = w1 + w2
-        max_allowed_h = h1 + h2  
-        if w_prime <= 0 or h_prime <= 0 or w_prime > max_allowed_w or h_prime > max_allowed_h:
-            print("Extreme warp dimensions")
-            continue
-
-        pano_canvas = np.zeros_like(frame_warped)
-        pano_canvas[t_y:h1 + t_y, t_x:w1 + t_x] = panorama
-
-        # Blending
-        mask = (pano_canvas > 0).astype(np.uint8)
-        blended_img = pano_canvas * mask + frame_warped * (1 - mask)
-        panorama = blended_img.astype(np.uint8)
-
-    return panorama
+    return clean_panorama 
